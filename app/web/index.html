@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🐢 海龟汤 AI 工坊</title>
+<script>
+/* 在样式表加载前应用已保存的主题，避免刷新时闪一下夜间底色 */
+(function () { try {
+  var t = localStorage.getItem("tt_theme");
+  document.documentElement.setAttribute("data-theme", (t === "light") ? "light" : "dark");
+} catch (e) {} })();
+</script>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -158,6 +165,16 @@
 
   <!-- ============ 设置 ============ -->
   <section id="view-settings" class="view hidden">
+    <div class="card">
+      <h3>🎨 界面主题</h3>
+      <label class="field"><span>选择风格（立即生效，无需保存；刷新后依然保持）</span>
+        <div class="seg" id="themeSeg">
+          <button data-v="dark" class="active">🌙 夜间模式（深夜海面）</button>
+          <button data-v="light">☀️ 白天模式（暖纸日光）</button>
+        </div>
+      </label>
+    </div>
+
     <div class="card">
       <h3>💬 对话模型 API</h3>
       <label class="field"><span>平台预设</span>

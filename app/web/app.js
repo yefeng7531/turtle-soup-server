@@ -506,6 +506,16 @@ $("#hostExitBtn").onclick = () => {
   $("#hostSetup").classList.remove("hidden");
 };
 
+/* ---------------- 界面主题（夜间/白天，选择即保存即生效） ---------------- */
+
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  try { localStorage.setItem("tt_theme", t); } catch (e) { /* ignore */ }
+  $$("#themeSeg button").forEach((x) => x.classList.toggle("active", x.dataset.v === t));
+}
+$$("#themeSeg button").forEach((b) => b.onclick = () => applyTheme(b.dataset.v));
+applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark");
+
 /* ---------------- 启动 ---------------- */
 
 async function boot() {
