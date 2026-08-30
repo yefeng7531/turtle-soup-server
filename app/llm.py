@@ -96,33 +96,106 @@ async def chat(cfg: dict, messages: list, *, max_tokens: int = 2000,
             payload["max_tokens"] = budget
 
 
-async def chat_stream(cfg: dict, messages: list, *, max_tokens: int = 2000,
-                      temperature: Optional[float] = None, timeout: float = 240.0) -> AsyncGenerator[str, None]:
-    """流式对话，供 AI 主持逐字输出使用。"""
+async def _stream_core(cfg: dict, payload: dict, timeout: float):
+    """打开流式连接解析 SSE：逐段 yield {"kind","text"}（kind: reasoning|content），
+    结束时 yield {"kind":"done","finish","content","think_len"}。网络错误自动重试一次（重试前发 reset）。"""
+    last_err: Exception | None = None
+    for attempt in range(2):
+        if attempt:
+            yield {"kind": "reset", "text": ""}
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream("POST", _url(cfg), headers=_headers(cfg), json=payload) as r:
+                    if r.status_code != 200:
+                        body = (await r.aread()).decode("utf-8", "ignore")
+                        raise LLMError(_friendly_status(r.status_code, body))
+                    content_parts: list[str] = []
+                    think_len = 0
+                    finish = None
+                    async for line in r.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if not data or data == "[DONE]":
+                            continue
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        choice = (chunk.get("choices") or [{}])[0]
+                        delta = choice.get("delta") or {}
+                        rc = delta.get("reasoning_content")
+                        if rc:
+                            think_len += len(rc)
+                            yield {"kind": "reasoning", "text": rc}
+                        pc = delta.get("content")
+                        if pc:
+                            content_parts.append(pc)
+                            yield {"kind": "content", "text": pc}
+                        if choice.get("finish_reason"):
+                            finish = choice["finish_reason"]
+                    yield {"kind": "done", "finish": finish,
+                           "content": "".join(content_parts), "think_len": think_len}
+                    return
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as e:
+            last_err = e
+            if attempt == 1:
+                break
+    raise LLMError(f"连接平台失败（{type(last_err).__name__}）。请检查服务器网络、Base URL 是否正确、平台是否可访问。{last_err}")
+
+
+async def stream_collect(cfg: dict, messages: list, *, max_tokens: int = 2000,
+                         temperature: Optional[float] = None, timeout: float = 300.0,
+                         on_delta=None) -> str:
+    """流式请求并收集完整正文，供生成流水线使用。on_delta(kind, text) 为异步回调，
+    实时转发思维链与输出；推理模型耗尽输出额度时自动放大 max_tokens 重试。"""
     payload = {"model": _model(cfg), "messages": messages, "max_tokens": max_tokens, "stream": True}
     payload["temperature"] = cfg.get("temperature", 0.8) if temperature is None else temperature
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("POST", _url(cfg), headers=_headers(cfg), json=payload) as r:
-                if r.status_code != 200:
-                    body = (await r.aread()).decode("utf-8", "ignore")
-                    raise LLMError(_friendly_status(r.status_code, body))
-                async for line in r.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
-                    if not data or data == "[DONE]":
-                        continue
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    delta = ((chunk.get("choices") or [{}])[0].get("delta")) or {}
-                    piece = delta.get("content") or ""
-                    if piece:
-                        yield piece
-    except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError) as e:
-        raise LLMError(f"连接平台失败（{type(e).__name__}）。请检查网络与 Base URL。{e}")
+    budget = max_tokens
+    for _ in range(3):
+        async for ev in _stream_core(cfg, payload, timeout):
+            if ev["kind"] == "done":
+                if ev["content"].strip():
+                    return ev["content"]
+                if ev["finish"] == "length" and ev["think_len"] > 0:
+                    break  # 思考耗尽额度 → 放大重试
+                raise LLMError("平台返回了空内容（流式）。请重试或换个模型。")
+            if on_delta:
+                await on_delta(ev["kind"], ev["text"])
+        else:
+            raise LLMError("流式响应异常中断。请重试。")
+        if budget >= 32000:
+            raise LLMError("模型的推理过程超长，32000 token 内仍未能给出正文。请换一个非推理模型（如 deepseek-v3 系列）再试。")
+        budget = min(budget * 4, 32000)
+        payload["max_tokens"] = budget
+        if on_delta:
+            await on_delta("reset", "")
+    raise LLMError("生成失败，请重试。")
+
+
+async def chat_stream(cfg: dict, messages: list, *, max_tokens: int = 2000,
+                      temperature: Optional[float] = None, timeout: float = 240.0) -> AsyncGenerator[dict, None]:
+    """流式对话，供 AI 主持逐字输出使用。逐段 yield {"kind","text"}（kind: reasoning|content|reset）。"""
+    payload = {"model": _model(cfg), "messages": messages, "max_tokens": max_tokens, "stream": True}
+    payload["temperature"] = cfg.get("temperature", 0.8) if temperature is None else temperature
+    budget = max_tokens
+    for _ in range(3):
+        done = None
+        async for ev in _stream_core(cfg, payload, timeout):
+            if ev["kind"] == "done":
+                done = ev
+                break
+            yield {"kind": ev["kind"], "text": ev["text"]}
+        if done and done["content"].strip():
+            return
+        if done and done["finish"] == "length" and done["think_len"] > 0:
+            if budget >= 32000:
+                raise LLMError("主持人模型的推理过程超长，未能给出回答。请换一个非推理模型再试。")
+            budget = min(budget * 4, 32000)
+            payload["max_tokens"] = budget
+            yield {"kind": "reset", "text": ""}
+            continue
+        raise LLMError("平台返回了空内容（流式）。请重试。")
 
 
 async def ping(cfg: dict) -> float:

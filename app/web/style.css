@@ -184,6 +184,19 @@ details.sec .sec-inner { margin-top: 10px; }
 .chat-input-row { display: flex; gap: 10px; }
 .chat-input-row input { flex: 1; }
 
+/* ---- 流式思维链（默认折叠 + 模糊，双重防剧透） ---- */
+details.stream, details.host-think { border: 1px solid var(--line); border-radius: 10px; background: var(--bg2); margin-top: 6px; }
+details.stream summary, details.host-think summary { cursor: pointer; padding: 8px 12px; color: var(--muted); font-size: 13px; user-select: none; }
+.spoiler-tag { font-size: 11px; color: var(--warn-text); border: 1px solid var(--warn-border); background: var(--warn-bg); border-radius: 10px; padding: 1px 8px; margin-left: 6px; }
+.stream-scroll { max-height: 280px; overflow-y: auto; padding: 2px 12px 10px; }
+.stream-label { color: var(--accent-text); font-weight: 700; font-size: 12.5px; margin: 8px 0 4px; }
+.stream-text { white-space: pre-wrap; word-break: break-word; color: var(--muted); line-height: 1.7; margin: 0 0 6px; font-family: inherit; font-size: 12.5px; filter: blur(5px); user-select: none; transition: filter .2s; }
+.stream-scroll.revealed .stream-text, .stream-text.revealed { filter: none; user-select: text; }
+.reveal-btn { font-size: 12px; background: var(--card2); border: 1px solid var(--line); color: var(--muted); border-radius: 8px; padding: 4px 10px; cursor: pointer; margin: 6px 0; }
+.reveal-btn:hover { border-color: var(--amber-dim); color: var(--accent-text); }
+details.host-think { max-width: 88%; }
+details.host-think pre { margin: 0 12px 10px; max-height: 200px; overflow-y: auto; }
+
 /* ---- 设置 ---- */
 .inline-row { display: flex; gap: 8px; align-items: center; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 130px; overflow-y: auto; margin-top: 8px; }

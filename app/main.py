@@ -330,9 +330,15 @@ async def host_chat(session_id: int, request: Request):
         async def gen():
             stream = await host.chat_reply(session_id, pack, message, cfg)
             try:
-                async for piece in stream:
-                    full.append(piece)
-                    yield f"data: {json.dumps({'type': 'chunk', 'text': piece}, ensure_ascii=False)}\n\n"
+                async for ev in stream:
+                    if ev["kind"] == "content":
+                        full.append(ev["text"])
+                        yield f"data: {json.dumps({'type': 'chunk', 'text': ev['text']}, ensure_ascii=False)}\n\n"
+                    elif ev["kind"] == "reasoning":
+                        # 主持人思维链：前端折叠+模糊展示，防剧透
+                        yield f"data: {json.dumps({'type': 'think', 'text': ev['text']}, ensure_ascii=False)}\n\n"
+                    elif ev["kind"] == "reset":
+                        yield f"data: {json.dumps({'type': 'think_reset'}, ensure_ascii=False)}\n\n"
             except llm.LLMError as e:
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
 

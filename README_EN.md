@@ -10,6 +10,7 @@ A self-hosted **AI generator for "Turtle Soup" (lateral thinking puzzles / situa
 - **Automatic quality review**: every puzzle is judged against 6 criteria (detail mapping, multi-solution elimination, spoiler check, genre compliance, difficulty match, hosting consistency); hard failures trigger automatic revision (up to 2 rounds)
 - **Optional illustrations**: supports Volcano Engine Doubao Seedream (best Chinese text rendering), SiliconFlow Kolors (free), and Pollinations (no registration). Images are derived **only from the surface story — never spoilers**
 - **AI host mode**: let the AI host a session — it only answers "Yes / No / Irrelevant", gives progressive hints on demand, and reveals the truth when you crack the case
+- **Live streaming chain-of-thought**: watch the AI's reasoning and output in real time while a puzzle is generated; peek into the AI host's mind while playing. Both are collapsed by default **and** blurred (double spoiler protection) until you explicitly reveal them
 - **History library**: everything is stored locally; view / export Markdown / reuse for a new game anytime
 - **Broad compatibility**: DeepSeek, SiliconFlow, Kimi, Zhipu, Alibaba Qwen, OpenRouter, local Ollama, plus any OpenAI-compatible endpoint — just paste an API key
 

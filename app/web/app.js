@@ -287,6 +287,19 @@ async function generate() {
         if (ev.level === "warn") d.className = "warn";
         $("#logList").appendChild(d);
         $("#logList").scrollTop = 1e9;
+      } else if (ev.type === "delta") {
+        const panel = ensureStreamPanel(ev.index, ev.stage);
+        if (ev.kind === "reset") {
+          panel.querySelector(".think").textContent = "";
+          panel.querySelector(".out").textContent = "";
+          return;
+        }
+        const pre = panel.querySelector(ev.kind === "reasoning" ? ".think" : ".out");
+        pre.appendChild(document.createTextNode(ev.text));
+        if (panel.open) {
+          const sc = panel.querySelector(".stream-scroll");
+          sc.scrollTop = sc.scrollHeight;
+        }
       } else if (ev.type === "soup") {
         $$("#stageList .stage-item").forEach((x) => { x.classList.remove("running"); x.classList.add("done"); });
         $("#results").prepend(renderSoupCard(ev.data, ev.id, ev.image));
@@ -312,6 +325,29 @@ function addLog(text, cls) {
   if (cls) d.className = cls;
   $("#logList").appendChild(d);
   $("#logList").scrollTop = 1e9;
+}
+
+/* 流式思维链面板：默认折叠 + 内容模糊，双重防剧透 */
+function ensureStreamPanel(index, stage) {
+  const id = `stream-${index}-${stage}`;
+  let el = document.getElementById(id);
+  if (el) return el;
+  el = document.createElement("details");
+  el.className = "stream";
+  el.id = id;
+  el.innerHTML = `<summary>🧠 AI 思维链与输出 <span class="spoiler-tag">含剧透 · 默认折叠</span></summary>
+    <div class="stream-scroll">
+      <button type="button" class="reveal-btn">🔒 内容已模糊以防剧透，点击显示原文</button>
+      <div class="stream-label">💭 思维链</div><pre class="stream-text think"></pre>
+      <div class="stream-label">✍️ 输出</div><pre class="stream-text out"></pre>
+    </div>`;
+  const btn = el.querySelector(".reveal-btn");
+  btn.onclick = () => {
+    const on = el.querySelector(".stream-scroll").classList.toggle("revealed");
+    btn.textContent = on ? "🙈 点击重新模糊（防剧透）" : "🔒 内容已模糊以防剧透，点击显示原文";
+  };
+  $("#stageList").appendChild(el);
+  return el;
 }
 $("#generateBtn").onclick = generate;
 
@@ -484,14 +520,40 @@ async function hostSend(presetText) {
   if (!text || !HOST_SESSION) return;
   input.value = "";
   addMsg("player", text);
+
+  // 主持人的内心活动（思维链）：默认不显示，展开也先模糊，双重防剧透
+  const think = document.createElement("details");
+  think.className = "host-think";
+  think.style.display = "none";
+  think.innerHTML = `<summary>🧠 主持人的内心活动 <span class="spoiler-tag">剧透慎点</span></summary>
+    <button type="button" class="reveal-btn">🔒 已模糊防剧透，点击显示原文</button>
+    <pre class="stream-text"></pre>`;
+  think.querySelector(".reveal-btn").onclick = () => {
+    const on = think.querySelector("pre").classList.toggle("revealed");
+    think.querySelector(".reveal-btn").textContent = on ? "🙈 点击重新模糊" : "🔒 已模糊防剧透，点击显示原文";
+  };
+  $("#hostChat").appendChild(think);
+
   const replyEl = addMsg("host", "…");
   let acc = "";
   try {
     await sseFetch(`/api/host/${HOST_SESSION.id}/chat`,
       { message: text, soup_id: HOST_SESSION.soup_id, pack: HOST_SESSION.pack },
       (ev) => {
-        if (ev.type === "chunk") { acc += ev.text; replyEl.textContent = acc; $("#hostChat").scrollTop = 1e9; }
-        else if (ev.type === "error") { replyEl.textContent = acc || ("出错：" + ev.message); toast(ev.message, true); }
+        if (ev.type === "think") {
+          think.style.display = "";
+          think.querySelector("pre").appendChild(document.createTextNode(ev.text));
+          if (think.open) $("#hostChat").scrollTop = 1e9;
+        } else if (ev.type === "think_reset") {
+          think.querySelector("pre").textContent = "";
+        } else if (ev.type === "chunk") {
+          acc += ev.text;
+          replyEl.textContent = acc;
+          $("#hostChat").scrollTop = 1e9;
+        } else if (ev.type === "error") {
+          replyEl.textContent = acc || ("出错：" + ev.message);
+          toast(ev.message, true);
+        }
       });
     if (/通关|公布/.test(acc)) replyEl.classList.add("win");
     if (!acc) replyEl.textContent = "（主持人沉默了…请重试）";

@@ -35,16 +35,23 @@ class PipelineError(Exception):
     pass
 
 
-async def _call_llm_json(cfg: dict, system: str, user: str, *, max_tokens: int, emit, stage: str) -> dict:
+async def _call_llm_json(cfg: dict, system: str, user: str, *, max_tokens: int, emit, stage: str,
+                         stage_key: str = "", idx: int = 0) -> dict:
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    text = await llm.chat(cfg, messages, max_tokens=max_tokens)
+
+    async def on_delta(kind: str, text: str):
+        # 实时转发思维链/输出到前端（前端默认折叠+模糊，防剧透）
+        await emit({"type": "delta", "index": idx, "stage": stage_key or stage, "kind": kind, "text": text})
+
+    text = await llm.stream_collect(cfg, messages, max_tokens=max_tokens, timeout=600, on_delta=on_delta)
     try:
         return extract_json(text)
     except (ValueError, json.JSONDecodeError) as e:
         await emit({"type": "log", "message": "模型输出无法解析为 JSON，自动重试一次…", "level": "warn"})
+        await emit({"type": "delta", "index": idx, "stage": stage_key or stage, "kind": "reset", "text": ""})
         messages.append({"role": "assistant", "content": text[:2000]})
         messages.append({"role": "user", "content": "你上一条输出无法被解析（错误：%s）。请重新输出，且只输出一个合法 JSON 对象，不要任何多余文字、注释或代码块围栏。" % e})
-        text2 = await llm.chat(cfg, messages, max_tokens=max_tokens)
+        text2 = await llm.stream_collect(cfg, messages, max_tokens=max_tokens, timeout=600, on_delta=on_delta)
         try:
             return extract_json(text2)
         except (ValueError, json.JSONDecodeError) as e2:
@@ -62,7 +69,8 @@ async def _generate_one(reqs: dict, cfg: dict, idx: int, total: int, emit, past_
     await emit({"type": "stage", "stage": "base", "index": idx, "message": "构思汤底（先汤底后汤面）…"})
     t0 = time.time()
     base1 = await _call_llm_json(cfg["chat"], STAGE1_SYSTEM.replace("{reqs}", _reqs_str(reqs_i)),
-                                 "请开始构思汤底。", max_tokens=8000, emit=emit, stage="汤底构思")
+                                 "请开始构思汤底。", max_tokens=8000, emit=emit, stage="汤底构思",
+                                 stage_key="base", idx=idx)
     await emit({"type": "log", "message": f"汤底完成：《{base1.get('title', '未命名》')}》（用时 {time.time() - t0:.0f}s）"})
 
     # 阶段 2：汤面 + 配套
@@ -70,7 +78,8 @@ async def _generate_one(reqs: dict, cfg: dict, idx: int, total: int, emit, past_
     t0 = time.time()
     user2 = f"【已定稿汤底】\n{json.dumps(base1, ensure_ascii=False)}\n\n请反推汤面并编写全套配套。"
     stage2 = await _call_llm_json(cfg["chat"], STAGE2_SYSTEM.replace("{base_json}", json.dumps(base1, ensure_ascii=False))
-                                  .replace("{reqs}", _reqs_str(reqs_i)), user2, max_tokens=10000, emit=emit, stage="汤面配套")
+                                  .replace("{reqs}", _reqs_str(reqs_i)), user2, max_tokens=10000, emit=emit, stage="汤面配套",
+                                  stage_key="surface", idx=idx)
     await emit({"type": "log", "message": f"汤面与配套完成（用时 {time.time() - t0:.0f}s）"})
 
     # 阶段 3：质检回炉
@@ -82,7 +91,8 @@ async def _generate_one(reqs: dict, cfg: dict, idx: int, total: int, emit, past_
         material = json.dumps({"汤底": base1, "汤面与配套": stage2, "需求": reqs_i}, ensure_ascii=False)
         try:
             judge = await _call_llm_json(cfg["chat"], JUDGE_SYSTEM.replace("{material}", material),
-                                         "请逐项审查并输出 JSON。", max_tokens=8000, emit=emit, stage="质检")
+                                         "请逐项审查并输出 JSON。", max_tokens=8000, emit=emit, stage="质检",
+                                         stage_key="judge", idx=idx)
         except PipelineError:
             judge = {"pass": True, "fatal": [], "warnings": ["质检环节模型输出异常，已跳过（不影响谜题本身）。"],
                      "multi_solutions": []}
@@ -100,7 +110,7 @@ async def _generate_one(reqs: dict, cfg: dict, idx: int, total: int, emit, past_
         try:
             stage2 = await _call_llm_json(cfg["chat"], STAGE2_SYSTEM.replace("{base_json}", json.dumps(base1, ensure_ascii=False))
                                           .replace("{reqs}", _reqs_str(reqs_i)), rev_user, max_tokens=10000,
-                                          emit=emit, stage="修订")
+                                          emit=emit, stage="修订", stage_key="revise", idx=idx)
         except PipelineError:
             rounds -= 1  # 修订失败则保留上一版
             break
