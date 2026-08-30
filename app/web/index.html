@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐢 海龟汤 AI 工坊</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- 登录锁屏 -->
+<div id="lock" class="lock hidden">
+  <div class="lock-box">
+    <div class="lock-logo">🐢</div>
+    <h2>海龟汤 AI 工坊</h2>
+    <p class="muted">本站已开启访问口令，请输入口令进入</p>
+    <input type="password" id="lockPassword" placeholder="访问口令" autocomplete="current-password">
+    <button id="lockBtn" class="btn primary">进入</button>
+    <p id="lockError" class="error hidden">口令不正确</p>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="logo">🐢 海龟汤 AI 工坊</div>
+    <nav>
+      <button class="tab active" data-view="generate">🍲 出汤</button>
+      <button class="tab" data-view="history">📜 历史汤库</button>
+      <button class="tab" data-view="host" id="tabHost">🎙️ AI 主持</button>
+      <button class="tab" data-view="settings">⚙️ 设置</button>
+    </nav>
+  </div>
+</header>
+
+<div id="noPasswordBanner" class="banner hidden">
+  ⚠️ 当前未设置访问口令 — 部署到公网服务器前，请先到 <a href="#" onclick="switchView('settings');return false;">设置</a> 中设置，防止陌生人消耗你的 API 额度。
+</div>
+
+<main class="container">
+
+  <!-- ============ 生成 ============ -->
+  <section id="view-generate" class="view">
+    <div class="gen-grid">
+      <div class="card form-card">
+        <h3>出汤配方</h3>
+
+        <label class="field"><span>主题</span>
+          <select id="theme">
+            <option>悬疑</option><option>恐怖</option><option>温情</option>
+            <option>搞笑</option><option>科幻</option><option>日常</option>
+            <option>爱情</option><option value="自定义">自定义…</option>
+          </select>
+        </label>
+        <input id="themeCustom" class="hidden" placeholder="输入自定义主题，如：校园、职场、武侠…" style="margin:-6px 0 14px;">
+
+        <label class="field"><span>类型</span>
+          <div class="seg" id="genre">
+            <button data-v="本格" class="active">本格（现实逻辑）</button>
+            <button data-v="变格">变格（超自然）</button>
+          </div>
+        </label>
+
+        <label class="field"><span>口味</span>
+          <div class="seg" id="taste">
+            <button data-v="清汤" class="active">清汤</button>
+            <button data-v="红汤">红汤</button>
+            <button data-v="黑汤">黑汤</button>
+          </div>
+        </label>
+
+        <label class="field"><span>难度</span>
+          <div class="seg" id="difficulty">
+            <button data-v="简单">⭐ 简单</button>
+            <button data-v="中等" class="active">⭐⭐ 中等</button>
+            <button data-v="困难">⭐⭐⭐ 困难</button>
+          </div>
+        </label>
+
+        <div class="two-col">
+          <label class="field"><span>篇数（1~5）</span>
+            <input type="number" id="count" min="1" max="5" value="1">
+          </label>
+          <label class="field"><span>用途</span>
+            <select id="use">
+              <option value="主持">聚会主持</option>
+              <option value="文案">发布文案（短视频/图文）</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="check"><input type="checkbox" id="withImage"> <span>🥣 为汤面生成插图（需在「设置」中配置生图渠道）</span></label>
+
+        <label class="field"><span>自定义要求（可选）</span>
+          <textarea id="custom" rows="3" placeholder="例：主角是外卖员；不要死亡情节；核心反转和钥匙有关…"></textarea>
+        </label>
+
+        <button id="generateBtn" class="btn primary big">🐢 开始出汤</button>
+        <p class="muted small" style="margin-top:10px;">流程：构思汤底 → 反推汤面 → AI 质检（不过自动回炉，最多2轮）→ 插图</p>
+      </div>
+
+      <div class="gen-right">
+        <div id="progressPanel" class="card hidden">
+          <h3>🫕 熬汤进度</h3>
+          <div id="stageList"></div>
+          <div id="logList" class="log"></div>
+        </div>
+        <div id="results"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 历史 ============ -->
+  <section id="view-history" class="view hidden">
+    <div class="card">
+      <div class="row-between">
+        <h3>📜 历史汤库</h3>
+        <button id="refreshHistory" class="btn ghost">刷新</button>
+      </div>
+      <div id="historyList" class="history-grid"></div>
+      <p id="historyEmpty" class="muted" style="text-align:center;padding:30px 0;">还没有生成记录，去「出汤」页熬第一锅吧。</p>
+    </div>
+  </section>
+
+  <!-- ============ AI 主持 ============ -->
+  <section id="view-host" class="view hidden">
+    <div id="hostSetup" class="card">
+      <h3>🎙️ AI 主持 · 开局</h3>
+      <p class="muted small">选择历史汤库中的一篇，或手动粘贴汤面与汤底。AI 只回答「是 / 否 / 与此无关」，猜中关键真相即通关。</p>
+      <label class="field"><span>从历史汤库选择</span>
+        <select id="hostSoupSelect"><option value="">— 选择 —</option></select>
+      </label>
+      <details id="hostManualWrap">
+        <summary>或手动粘贴谜题（没有历史记录时用）</summary>
+        <label class="field"><span>汤面 *</span><textarea id="hostSurface" rows="2" placeholder="谜题表面情境…"></textarea></label>
+        <label class="field"><span>汤底 *</span><textarea id="hostBase" rows="3" placeholder="完整真相…"></textarea></label>
+        <label class="field"><span>关键线索点（每行一个，可选）</span><textarea id="hostClues" rows="2"></textarea></label>
+        <label class="field"><span>递进提示（每行一个，可选）</span><textarea id="hostHints" rows="2"></textarea></label>
+      </details>
+      <button id="hostStartBtn" class="btn primary">开始主持</button>
+    </div>
+
+    <div id="hostPlay" class="card hidden">
+      <div class="row-between">
+        <h3 id="hostTitle">🎙️ 游戏中</h3>
+        <div>
+          <button id="hostGiveupBtn" class="btn ghost small-btn">公布答案</button>
+          <button id="hostExitBtn" class="btn ghost small-btn">结束本局</button>
+        </div>
+      </div>
+      <div class="surface-quote" id="hostSurfaceBox"></div>
+      <div id="hostChat" class="chat"></div>
+      <div class="chat-input-row">
+        <input id="hostInput" placeholder="问一个能用 是/否 回答的问题…（输入：提示 可获得递进提示）">
+        <button id="hostSendBtn" class="btn primary">发送</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 设置 ============ -->
+  <section id="view-settings" class="view hidden">
+    <div class="card">
+      <h3>💬 对话模型 API</h3>
+      <label class="field"><span>平台预设</span>
+        <select id="chatProvider"></select>
+        <p class="muted small" id="chatPresetHint"></p>
+      </label>
+      <label class="field"><span>Base URL（接口地址）</span>
+        <input id="chatBaseUrl" placeholder="https://api.deepseek.com/v1">
+      </label>
+      <label class="field"><span>API Key <span id="chatKeyState" class="muted small"></span></span>
+        <input type="password" id="chatApiKey" placeholder="留空则保持已保存的 Key 不变">
+      </label>
+      <label class="field"><span>模型名称（点击下方名称即可选用，也可手动输入）</span>
+        <div class="inline-row">
+          <input id="chatModel" list="chatModelList" placeholder="deepseek-chat">
+          <button id="fetchModelsBtn" class="btn small-btn" type="button">🔄 获取模型列表</button>
+        </div>
+        <datalist id="chatModelList"></datalist>
+        <div id="chatModelChips" class="chips"></div>
+      </label>
+      <label class="field"><span>创意度 temperature：<b id="tempVal">0.8</b></span>
+        <input type="range" id="chatTemp" min="0" max="1.5" step="0.1" value="0.8">
+      </label>
+      <div class="row-gap">
+        <button id="testChatBtn" class="btn ghost">测试对话连接</button>
+        <span id="testChatResult" class="test-result"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>🎨 生图 API（可选，为汤面配插图）</h3>
+      <label class="field"><span>生图渠道</span>
+        <select id="imageProvider"></select>
+        <p class="muted small" id="imagePresetHint"></p>
+      </label>
+      <div id="imageConfig">
+        <label class="field"><span>Base URL</span><input id="imageBaseUrl" placeholder="https://ark.cn-beijing.volces.com/api/v3"></label>
+        <label class="field"><span>API Key <span id="imageKeyState" class="muted small"></span></span>
+          <input type="password" id="imageApiKey" placeholder="留空则保持已保存的 Key 不变"></label>
+        <label class="field"><span>模型名称</span>
+          <div class="inline-row">
+            <input id="imageModel" list="imageModelList" placeholder="doubao-seedream-4-0-250828">
+            <button id="fetchImageModelsBtn" class="btn small-btn" type="button">🔄 获取模型列表</button>
+          </div>
+          <datalist id="imageModelList"></datalist>
+          <div id="imageModelChips" class="chips"></div>
+        </label>
+        <label class="field"><span>图片尺寸（宽x高，豆包也可填 2K）</span><input id="imageSize" placeholder="1024x1024"></label>
+        <p class="muted small">💡 豆包 Seedream 是中文出图效果最好的渠道（图内可渲染中文标题）；追求零成本可先用 Pollinations（免注册）或硅基流动 Kolors（免费额度）。插图内容只取自汤面，永远不会剧透汤底。</p>
+      </div>
+      <div class="row-gap">
+        <button id="testImageBtn" class="btn ghost">测试生图连接</button>
+        <span id="testImageResult" class="test-result"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>🎙️ AI 主持 &amp; 🔐 访问口令</h3>
+      <label class="check"><input type="checkbox" id="hostEnabled"> <span>启用 AI 主持游玩模式</span></label>
+      <label class="field"><span>设置新访问口令（部署到公网服务器前务必设置）</span>
+        <input type="password" id="newPassword" placeholder="留空 = 不修改">
+      </label>
+      <div class="row-gap">
+        <button id="clearPasswordBtn" class="btn ghost small-btn">清除口令（仅限本地使用）</button>
+      </div>
+    </div>
+
+    <button id="saveSettingsBtn" class="btn primary big">💾 保存全部设置</button>
+  </section>
+</main>
+
+<!-- 汤品详情弹窗 -->
+<div id="modal" class="modal hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="modal-body" id="modalContent"></div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<script src="/app.js"></script>
+</body>
+</html>

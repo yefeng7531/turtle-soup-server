@@ -1,0 +1,12 @@
+# 运行数据与密钥（绝不能上传）
+data/
+*.log
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 系统杂项
+.DS_Store
+Thumbs.db
